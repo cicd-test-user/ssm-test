@@ -15,4 +15,3 @@ compose:
 keyed_groups:
   - key: tags.Role
     prefix: tag_
-    
