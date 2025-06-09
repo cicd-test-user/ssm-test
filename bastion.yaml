@@ -1,0 +1,13 @@
+- name: Bastion
+  hosts: bastion
+  gather_facts: true
+  become: true
+
+  tasks:
+    - name: Run a test command
+      ansible.builtin.command: echo "Hello, World!" > /tmp/hello.txt
+      changed_when: false
+
+  roles:
+    - role: geerlingguy.nginx
+      tags: nginx

@@ -1,0 +1,10 @@
+---
+collections:
+  - name: amazon.aws
+    version: "9.4.0"  # https://github.com/ansible-collections/amazon.aws
+  - name: community.aws
+    version: "9.3.0"  # https://github.com/ansible-collections/community.aws
+
+roles:
+  - name: geerlingguy.nginx
+    version: "3.2.0"  # https://github.com/geerlingguy/ansible-role-nginx

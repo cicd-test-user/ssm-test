@@ -1,0 +1,168 @@
+name: 'Ansible playbook dry-run/apply'
+
+on:
+  push:
+    branches:
+    - main
+    # - develop
+  pull_request:
+    branches:
+    - main
+    # - develop
+
+# Special permissions required for OIDC authentication
+# https://github.com/aws-actions/configure-aws-credentials?tab=readme-ov-file#oidc
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  ansible-dry-run:
+    name: 'Ansible dry-run'
+    runs-on: ubuntu-24.04
+    env:
+      # this is needed since we are running terraform with read-only permissions
+      ARM_SKIP_PROVIDER_REGISTRATION: true
+    outputs:
+      dryrunExitCode: ${{ steps.ansible-dry-run.outputs.exitcode }}
+
+    steps:
+    # Checkout the repository to the GitHub Actions runner
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    # Create a JWT Token using OIDC
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        audience: sts.amazonaws.com
+        aws-region: ap-northeast-1
+        role-to-assume: arn:aws:iam::368017226728:role/GitHubActionsOidcRole # replace with your role
+
+    # Setup Python See: https://github.com/marketplace/actions/setup-python
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13.3'
+        cache: 'pip'
+
+    # Setup the latest version of Ansible CLI and collections
+    - name: Setup Ansible
+      shell: bash
+      run: |
+        pip install -r requirements.txt
+        ansible-galaxy install -r requirements.yaml
+
+    # Generates an execution dryrun for Ansible
+    # An exit code of 0 indicated no changes, 1 a dryrun failure, 2 there are pending changes.
+    - name: Ansible dry-run
+      id: ansible-dry-run
+      run: |
+        export exitcode=0
+        ansible-playbook -i inventories/poc/aws_ec2.yaml bastion.yaml --check --diff | tee ansible-dry-run
+
+        if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+          echo "Ansible dry-run failed!" | tee -a ansible-dry-run
+          export exitcode=${PIPESTATUS[0]}
+        else
+          grep -i "changed" ansible-dry-run | grep -v "changed=0"
+          if [ $? -eq 0 ]; then
+            export exitcode=2
+          else
+            export exitcode=0
+          fi
+        fi
+
+        echo "exitcode=$exitcode" >> $GITHUB_OUTPUT
+
+        if [ $exitcode -ne 0 ] && [ $exitcode -ne 2 ]; then
+          echo Ansible dry-run Failed!
+          exit 1
+        else
+          exit 0
+        fi
+
+    # Create string output of Ansible dry-run
+    - name: Create String Output
+      id: ansible-dry-run-string
+      run: |
+        ANSIBLE_DRY_RUN=$(cat ansible-dry-run)
+
+        delimiter="$(openssl rand -hex 8)"
+        echo "summary<<${delimiter}" >> $GITHUB_OUTPUT
+        echo "## Ansible dry-run Output" >> $GITHUB_OUTPUT
+        echo "<details><summary>Click to expand</summary>" >> $GITHUB_OUTPUT
+        echo "" >> $GITHUB_OUTPUT
+        echo '```ansible-dry-run' >> $GITHUB_OUTPUT
+        echo "$ANSIBLE_DRY_RUN" >> $GITHUB_OUTPUT
+        echo '```' >> $GITHUB_OUTPUT
+        echo "</details>" >> $GITHUB_OUTPUT
+        echo "${delimiter}" >> $GITHUB_OUTPUT
+
+    # Publish Ansible dry-run as task summary
+    - name: Publish Ansible dry-run to Task Summary
+      env:
+        SUMMARY: ${{ steps.ansible-dry-run-string.outputs.summary }}
+      run: |
+        echo "$SUMMARY" >> $GITHUB_STEP_SUMMARY
+
+    # If this is a PR post the changes
+    - name: Push Ansible dry-run Output to PR
+      if: github.ref != 'refs/heads/main'
+      uses: actions/github-script@v7
+      env:
+        SUMMARY: "${{ steps.ansible-dry-run-string.outputs.summary }}"
+      with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const body = `${process.env.SUMMARY}`;
+            github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body
+            })
+
+  ansible-apply:
+    name: 'Ansible Apply / Run playbook'
+    if: github.ref == 'refs/heads/main' && needs.ansible-dry-run.outputs.dryrunExitCode == '2'
+    runs-on: ubuntu-24.04
+    environment: production
+    needs:
+      - ansible-dry-run
+
+    steps:
+    # Checkout the repository to the GitHub Actions runner
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    # Create a JWT Token using OIDC
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        audience: sts.amazonaws.com
+        aws-region: ap-northeast-1
+        role-to-assume: arn:aws:iam::058264231989:role/RunTerraformOIDCGitHubActions # replace with your role
+
+    # Setup Python See: https://github.com/marketplace/actions/setup-python
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13.3'
+        cache: 'pip'
+
+    # Setup the latest version of Ansible CLI and collections
+    - name: Setup Ansible
+      shell: bash
+      run: |
+        pip install -r requirements.txt
+        ansible-galaxy install -r requirements.yaml
+
+    # Run ansible playbook
+    - name: Run Ansible Playbook
+      id: ansible-apply
+      run: |
+        pwd
+        ls -l
+        ansible-playbook -i inventories/poc/aws_ec2.yaml bastion.yaml --diff

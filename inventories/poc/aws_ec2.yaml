@@ -1,0 +1,17 @@
+plugin: amazon.aws.aws_ec2
+regions:
+  - ap-northeast-1
+
+filters:
+  tag:Role:
+    - Batch
+
+hostnames:
+  - tag:Name
+
+compose:
+  ansible_host: instance_id
+
+keyed_groups:
+  - key: tags.Role
+    prefix: tag_
