@@ -1,5 +1,5 @@
 - name: Bastion
-  hosts: bastion
+  hosts: tag__Batch
   gather_facts: true
   become: true
 
