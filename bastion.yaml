@@ -1,7 +1,16 @@
 - name: Bastion
   hosts: tag__Batch
-  gather_facts: true
+  gather_facts: false  # 自動での facts 収集は抑制
   become: true
+
+  pre_tasks:
+    - name: Workaround: Gather facts manually for SSM connection
+      ansible.builtin.setup:
+        gather_subset: all
+        filter: "*"
+      vars:
+        ansible_shell_type: sh
+        ansible_shell_executable: /bin/sh
 
   tasks:
     - name: Run a test command
