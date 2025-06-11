@@ -1,22 +1,16 @@
 - name: Bastion
   hosts: tag__Batch
-  gather_facts: false  # 自動での facts 収集は抑制
+  gather_facts: false
   become: true
 
-  pre_tasks:
-    - name: Workaround: Gather facts manually for SSM connection
-      ansible.builtin.setup:
-        gather_subset: all
-        filter: "*"
-      vars:
-        ansible_shell_type: sh
-        ansible_shell_executable: /bin/sh
-
   tasks:
-    - name: Run a test command
-      ansible.builtin.command: echo "Hello, World!" > /tmp/hell.txt
-      changed_when: false
+    - name: Show local facts
+      debug:
+        msg: >
+          OS: {{ ansible_local.system_info.os_family }},
+          Arch: {{ ansible_local.system_info.architecture }},
+          Hostname: {{ ansible_local.system_info.hostname }}
 
-  roles:
-    - role: geerlingguy.nginx
-      tags: nginx
+    - name: Run a test command
+      ansible.builtin.command: echo "Hello from facts!" > /tmp/fact-test.txt
+      changed_when: false
