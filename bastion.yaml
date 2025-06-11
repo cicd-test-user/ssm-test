@@ -5,7 +5,7 @@
 
   tasks:
     - name: Run a test command
-      ansible.builtin.command: echo "Hello, World!" > /tmp/hello.txt
+      ansible.builtin.command: echo "Hello, World!" > /tmp/hell.txt
       changed_when: false
 
   roles:
